@@ -1,7 +1,9 @@
 # A3_Yildirim_Kemal
  a3
 
+The completed version of the assignment (with successful AABB-AABB collision) is on another branch.
 
+The main branch is the project I submitted for the assignment.
 
 I apologize for the shortcomings of the project.
 I learned a lot throughout this project, and that makes me happy. The lessons from this project are immense, so even though I couldn’t fully complete the assignment, it has been a significant achievement for me.
@@ -12,6 +14,7 @@ Thank you!
 
 
 Youtube link: https://www.youtube.com/watch?v=GiRUsxO4NFQ
+
 
 
 
