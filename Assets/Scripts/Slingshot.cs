@@ -93,8 +93,8 @@ public class Slingshot : MonoBehaviour
 
         Debug.Log($"Launching Bird: Velocity={birdObject.velocity}, Force={launchDirection.magnitude}");
 
-        // Optionally spawn a new bird immediately after launch
-        // SpawnBird();
+        
+       
     }
 
     private void SpawnBird()

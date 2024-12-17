@@ -23,12 +23,23 @@ public class FizikMotoru : MonoBehaviour
     public float dt = 0.02f;
     public Vector3 AccelerationGravity = new Vector3(0, -10, 0);
 
-    public class SurfaceMaterial
-    {
-        public string materialName; // 
-        public float restitution; // 
-    }
 
+    private static float[,] restitutionTable = new float[,]
+{
+    // Steel, Wood, Rubber, Cloth, Stone
+    { 0.9f, 0.7f, 0.6f, 0.4f, 0.8f }, // Steel
+    { 0.7f, 0.5f, 0.4f, 0.3f, 0.6f }, // Wood
+    { 0.6f, 0.4f, 0.8f, 0.2f, 0.5f }, // Rubber
+    { 0.4f, 0.3f, 0.2f, 0.1f, 0.3f }, // Cloth
+    { 0.8f, 0.6f, 0.5f, 0.3f, 0.7f }  // Stone
+};
+
+    private float GetRestitution(SurfaceMaterial matA, SurfaceMaterial matB)
+    {
+        int indexA = (int)matA;
+        int indexB = (int)matB;
+        return restitutionTable[indexA, indexB];
+    }
 
 
     void FixedUpdate()
@@ -47,22 +58,27 @@ public class FizikMotoru : MonoBehaviour
 
     private void UpdatePhysics()
     {
-        foreach (FizikObject objectA in objects)
+        foreach (FizikObject obj in objects)
         {
-            if (!objectA.isStatic)
-            {
-                Vector3 prevPos = objectA.transform.position;
-                objectA.velocity += AccelerationGravity * objectA.gravityScale * dt;
-                ApplyDrag(objectA);
+            if (obj.isStatic) continue;
 
-                Vector3 newPos = objectA.transform.position + objectA.velocity * dt;
-                objectA.transform.position = newPos;
+            // Apply Gravity
+            obj.velocity += AccelerationGravity * obj.gravityScale * dt;
 
-                Debug.DrawLine(prevPos, newPos, Color.green, 0.1f);
-                Debug.DrawLine(objectA.transform.position, objectA.transform.position + objectA.velocity, Color.red, 0.1f);
-            }
+            // Apply Drag
+            Vector3 dragForce = -obj.drag * obj.velocity.sqrMagnitude * obj.velocity.normalized;
+            obj.velocity += dragForce * dt;
+
+            // Update Position
+            obj.transform.position += obj.velocity * dt;
         }
     }
+
+    private void UpdatePosition(FizikObject obj)
+    {
+        obj.transform.position += obj.velocity * dt;
+    }
+
 
     private void ResetVisuals()
     {
@@ -199,7 +215,7 @@ public class FizikMotoru : MonoBehaviour
         {
             Vector3 collisionNormal = displacement.normalized;
 
-            
+            // Momentum ve hız değişimleri
             Vector3 relativeVelocity = objectA.velocity - objectB.velocity;
 
 
@@ -216,7 +232,7 @@ public class FizikMotoru : MonoBehaviour
             if (!objectB.isStatic)
                 objectB.velocity += impulse / objectB.mass;
 
-            // 
+            // Çarpışma sonrası pozisyon düzeltmesi (penetrasyonu önleme)
             Vector3 mtv = collisionNormal * overlap * 0.5f;
             if (!objectA.isStatic) objectA.transform.position += mtv;
             if (!objectB.isStatic) objectB.transform.position -= mtv;
@@ -228,19 +244,6 @@ public class FizikMotoru : MonoBehaviour
     }
 
 
-    private static void HandleStaticCollision(FizikObject objectA, FizikObject objectB, Vector3 collisionNormal, float overlap)
-    {
-        if (objectA.isStatic)
-        {
-            objectB.transform.position -= collisionNormal * overlap;
-            objectB.velocity = Vector3.zero;
-        }
-        else
-        {
-            objectA.transform.position += collisionNormal * overlap;
-            objectA.velocity = Vector3.zero;
-        }
-    }
 
     public bool CollideSpherePlane(FizziksShapeSphere sphere, FizziksShapePlane plane, FizikObject objectA)
     {
@@ -270,125 +273,136 @@ public class FizikMotoru : MonoBehaviour
 
     public static bool CollideAABBs(FizziksShapeAABB aabbA, FizziksShapeAABB aabbB, FizikObject objectA, FizikObject objectB)
     {
-        // 
+        // Recalculate bounds to ensure they are up to date
         aabbA.RecalculateBounds();
         aabbB.RecalculateBounds();
 
-        
-        if (!(aabbA.max.x >= aabbB.min.x && aabbA.min.x <= aabbB.max.x &&
-              aabbA.max.y >= aabbB.min.y && aabbA.min.y <= aabbB.max.y &&
-              aabbA.max.z >= aabbB.min.z && aabbA.min.z <= aabbB.max.z))
-        {
-            return false;
-        }
-
-    
-        Vector3 mtv = CalculateMTV(aabbA, aabbB);
-
-       
-        ResolvePenetration(objectA, objectB, mtv);
-
-        
-        ResolveVelocity(objectA, objectB, mtv);
-
-        return true;
-    }
-
-    private static Vector3 CalculateMTV(FizziksShapeAABB aabbA, FizziksShapeAABB aabbB)
-    {
+        // Check for overlap along each axis
         float overlapX = Mathf.Min(aabbA.max.x - aabbB.min.x, aabbB.max.x - aabbA.min.x);
         float overlapY = Mathf.Min(aabbA.max.y - aabbB.min.y, aabbB.max.y - aabbA.min.y);
         float overlapZ = Mathf.Min(aabbA.max.z - aabbB.min.z, aabbB.max.z - aabbA.min.z);
 
-        float[] overlaps = { overlapX, overlapY, overlapZ };
-        int minAxis = Array.IndexOf(overlaps, Mathf.Min(overlaps));
-
-        return minAxis switch
+        if (overlapX > 0 && overlapY > 0 && overlapZ > 0)
         {
-            0 => new Vector3(overlapX, 0, 0) * (aabbA.min.x < aabbB.min.x ? -1 : 1),
-            1 => new Vector3(0, overlapY, 0) * (aabbA.min.y < aabbB.min.y ? -1 : 1),
-            _ => new Vector3(0, 0, overlapZ) * (aabbA.min.z < aabbB.min.z ? -1 : 1),
-        };
-    }
+            // Determine the axis of least penetration (minimum overlap)
+            float[] overlaps = { overlapX, overlapY, overlapZ };
+            int minAxis = Array.IndexOf(overlaps, Mathf.Min(overlaps));
 
-    private static void ResolvePenetration(FizikObject objectA, FizikObject objectB, Vector3 mtv)
-    {
-        if (objectA.isStatic)
-        {
-            objectB.transform.position += mtv;
-            objectB.velocity = Vector3.zero;
-        }
-        else if (objectB.isStatic)
-        {
-            objectA.transform.position -= mtv;
-            objectA.velocity = Vector3.zero;
-        }
-        else
-        {
-            objectA.transform.position -= mtv / 2;
-            objectB.transform.position += mtv / 2;
-        }
-    }
+            Vector3 collisionNormal = Vector3.zero;
 
-    private static void ResolveVelocity(FizikObject objectA, FizikObject objectB, Vector3 mtv)
-    {
-        float massA = objectA.isStatic ? float.MaxValue : objectA.mass;
-        float massB = objectB.isStatic ? float.MaxValue : objectB.mass;
-
-        Vector3 relativeVelocity = objectA.velocity - objectB.velocity;
-        float restitution = 0.5f;
-
-        // 
-        float impulseMagnitude = (1 + restitution) * Vector3.Dot(relativeVelocity, mtv.normalized) / (1 / massA + 1 / massB);
-        Vector3 impulse = mtv.normalized * impulseMagnitude;
-
-        if (!objectA.isStatic)
-            objectA.velocity -= impulse / massA;
-
-        if (!objectB.isStatic)
-            objectB.velocity += impulse / massB;
-
-        Vector3 tangentVelocity = relativeVelocity - Vector3.Project(relativeVelocity, mtv.normalized);
-        Vector3 frictionForce = -tangentVelocity.normalized * Mathf.Min(tangentVelocity.magnitude, 0.5f); 
-
-        if (!objectA.isStatic)
-            objectA.velocity += frictionForce / massA;
-
-        if (!objectB.isStatic)
-            objectB.velocity -= frictionForce / massB;
-    }
-
-
-
-
-    public static bool CollideSphereAABB(FizziksShapeSphere sphere, FizziksShapeAABB aabb, FizikObject sphereObject)
-    {
-        aabb.RecalculateBounds();
-
-        // Find the closest point on the AABB to the sphere's center
-        Vector3 closestPoint = Vector3.Max(aabb.min, Vector3.Min(sphere.transform.position, aabb.max));
-
-        // Calculate the distance from the sphere's center to the closest point
-        Vector3 sphereToClosest = sphere.transform.position - closestPoint;
-        float distanceSquared = sphereToClosest.sqrMagnitude;
-
-        if (distanceSquared < sphere.radius * sphere.radius)
-        {
-            // Collision detected: resolve the collision
-            float penetrationDepth = sphere.radius - Mathf.Sqrt(distanceSquared);
-            Vector3 mtv = sphereToClosest.normalized * penetrationDepth;
-
-            if (!sphereObject.isStatic)
+            // Set the MTV direction based on the axis with the least penetration
+            switch (minAxis)
             {
-                sphereObject.transform.position += mtv;
-                sphereObject.velocity = Vector3.zero;
+                case 0: collisionNormal = Vector3.right * Mathf.Sign(aabbA.min.x - aabbB.min.x); break; // X-axis
+                case 1: collisionNormal = Vector3.up * Mathf.Sign(aabbA.min.y - aabbB.min.y); break;   // Y-axis
+                case 2: collisionNormal = Vector3.forward * Mathf.Sign(aabbA.min.z - aabbB.min.z); break; // Z-axis
             }
+
+            // Minimum Translation Vector
+            Vector3 mtv = collisionNormal * overlaps[minAxis];
+
+            // Apply the MTV to separate the objects
+            if (!objectA.isStatic)
+                objectA.transform.position += mtv * 0.5f;
+            if (!objectB.isStatic)
+                objectB.transform.position -= mtv * 0.5f;
+
+            // Resolve velocities (impulse-based response)
+            Vector3 relativeVelocity = objectA.velocity - objectB.velocity;
+            float impulseMagnitude = Vector3.Dot(relativeVelocity, collisionNormal) * (1 + objectA.restitution) / (1 / objectA.mass + 1 / objectB.mass);
+            Vector3 impulse = collisionNormal * impulseMagnitude;
+
+            if (!objectA.isStatic) objectA.velocity -= impulse / objectA.mass;
+            if (!objectB.isStatic) objectB.velocity += impulse / objectB.mass;
 
             return true;
         }
 
         return false;
     }
+
+
+    public static bool CollideSphereAABB(FizziksShapeSphere sphere, FizziksShapeAABB aabb, FizikObject sphereObject)
+    {
+        aabb.RecalculateBounds();
+
+        // Predict the sphere's movement using its velocity
+        Vector3 startPosition = sphere.transform.position;
+        Vector3 endPosition = startPosition + sphereObject.velocity * FizikMotoru.Instance.dt;
+
+        Vector3 direction = (endPosition - startPosition).normalized;
+        float maxDistance = (endPosition - startPosition).magnitude;
+
+        // Step 1: Perform initial collision check at the current position
+        Vector3 closestPoint = Vector3.Max(aabb.min, Vector3.Min(startPosition, aabb.max));
+        float closestDistance = (closestPoint - startPosition).sqrMagnitude;
+
+        if (closestDistance <= sphere.radius * sphere.radius)
+        {
+            // Step 2: Calculate collision normal and penetration depth
+            Vector3 sphereToClosest = closestPoint - startPosition;
+            float distance = sphereToClosest.magnitude;
+            Vector3 collisionNormal = distance > 0 ? sphereToClosest.normalized : Vector3.up;
+            float penetrationDepth = sphere.radius - distance;
+
+            // Step 3: Resolve collision (push sphere out)
+            sphereObject.transform.position -= collisionNormal * penetrationDepth;
+
+            // Reflect velocity to simulate bouncing
+            float restitution = sphereObject.restitution;
+            sphereObject.velocity = Vector3.Reflect(sphereObject.velocity, collisionNormal) * restitution;
+
+            return true;
+        }
+
+        // Step 4: Swept collision detection (raycast-like check)
+        Ray ray = new Ray(startPosition, direction);
+        float t = 0.0f;
+
+        if (SweptSphereAABB(ray, aabb, sphere.radius, out t) && t <= maxDistance)
+        {
+            Vector3 collisionPoint = startPosition + direction * t;
+            Vector3 collisionNormal = (collisionPoint - closestPoint).normalized;
+
+            // Move the sphere to the collision point
+            sphereObject.transform.position = collisionPoint - collisionNormal * sphere.radius;
+
+            // Reflect velocity
+            float restitution = sphereObject.restitution;
+            sphereObject.velocity = Vector3.Reflect(sphereObject.velocity, collisionNormal) * restitution;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // Swept Sphere-AABB Helper
+    private static bool SweptSphereAABB(Ray ray, FizziksShapeAABB aabb, float sphereRadius, out float t)
+    {
+        t = 0.0f;
+        float tNear = float.NegativeInfinity, tFar = float.PositiveInfinity;
+
+        for (int i = 0; i < 3; i++)
+        {
+            float invRayDir = 1.0f / ray.direction[i];
+            float t1 = (aabb.min[i] - ray.origin[i] - sphereRadius) * invRayDir;
+            float t2 = (aabb.max[i] - ray.origin[i] + sphereRadius) * invRayDir;
+
+            if (t1 > t2) (t1, t2) = (t2, t1);
+
+            tNear = Mathf.Max(tNear, t1);
+            tFar = Mathf.Min(tFar, t2);
+
+            if (tNear > tFar || tFar < 0.0f)
+                return false; // No collision
+        }
+
+        t = tNear;
+        return true;
+    }
+
+
 
 
     public static bool CollideAABBPlane(FizziksShapeAABB aabb, FizziksShapePlane plane, FizikObject objectA)
@@ -464,7 +478,6 @@ public class FizikMotoru : MonoBehaviour
     }
 
 
-
     public void DestroyFizikObject(FizikObject obj)
     {
         if (objects.Contains(obj))
@@ -473,8 +486,4 @@ public class FizikMotoru : MonoBehaviour
         }
         Destroy(obj.gameObject);
     }
-
-
-
 }
-

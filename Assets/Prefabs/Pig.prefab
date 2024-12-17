@@ -138,4 +138,7 @@ MonoBehaviour:
   mass: 1
   gravityScale: 1
   isStatic: 0
+  restitution: 0.8
+  staticFrictionCoefficient: 0.5
+  kineticFrictionCoefficient: 0.3
   launchTime: 0
